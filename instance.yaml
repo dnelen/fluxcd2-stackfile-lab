@@ -12,9 +12,8 @@ spec:
     - source-controller
     - kustomize-controller
     - helm-controller
-    - notification-controller
   sync:
     kind: GitRepository
     url: "https://github.com/dnelen/fluxcd2-stackfile-lab.git"
-    ref: "refs/heads/main"
-    path: "/"
+    ref: "refs/heads/development"
+    path: "/demo"
