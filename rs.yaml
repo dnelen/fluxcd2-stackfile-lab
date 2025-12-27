@@ -1,0 +1,72 @@
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSet
+metadata:
+  name: appsets
+  namespace: flux-system
+spec:
+  inputsFrom:
+    - kind: ResourceSetInputProvider
+      selector:
+        matchLabels:
+          appset: "true"
+  resourcesTemplate: |
+    # Namespace
+    ---
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: << inputs.namespace.name >>
+      << $labels := default (dict) (index inputs.namespace "labels") >>
+      << if gt (len $labels) 0 >>
+      labels:
+        << range $k, $v := $labels >>
+        << $k >>: << $v >>
+        << end >>
+      << end >>
+    # Repositories
+    << $repositories := default (dict) (index inputs "repositories") >>
+    << if gt (len $repositories) 0 >>
+    << range $repository := $repositories >>
+    ---
+    apiVersion: source.toolkit.fluxcd.io/v1
+    kind: HelmRepository
+    metadata:
+      name: << $repository.name >>
+      namespace: << inputs.namespace.name >>
+    spec:
+      url: << $repository.url >>
+      type: << $repository.type >>
+      interval: << $repository.interval >>
+    << end >>
+    << end >>
+    # Releases
+    << $releases := default (dict) (index inputs "releases") >>
+    << if gt (len $releases) 0 >>
+    << range $release := $releases >>
+    ---
+    apiVersion: helm.toolkit.fluxcd.io/v2
+    kind: HelmRelease
+    metadata:
+      name: << $release.name >>
+      namespace: << inputs.namespace.name >>
+    spec:
+      releaseName: << $release.name >>
+      timeout: 15m
+      chart:
+        spec:
+          chart: << $release.chart >>
+          version: << $release.version >>
+          sourceRef:
+            kind: HelmRepository
+            name: << $release.repository >>
+      interval: 12h0m0s
+      install:
+        crds: CreateReplace
+      upgrade:
+        crds: CreateReplace
+    << end >>
+    << end >>
+
+
+
+
