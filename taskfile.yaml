@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+vars:
+  CLUSTERNAME: 'stackfile-lab'
+  REGISTRYNAME: 'stackfile-registry-mirror'
+  DOCKERNETWORK: 'kind'
+  REGISTRYIMAGE: 'registry:3'
+  REGISTRIES:
+    - NAME: docker
+      BASE: 'docker.io'
+      URL: 'https://registry-1.docker.io'
+      CONTAINERNAME: "{{.REGISTRYNAME}}-docker"
+    - NAME: ghcr
+      BASE: 'ghcr.io'
+      URL: 'https://ghcr.io'
+      CONTAINERNAME: "{{.REGISTRYNAME}}-ghcr"
+    - NAME: k8s
+      BASE: 'registry.k8s.io'
+      URL: 'https://registry.k8s.io'
+      CONTAINERNAME: "{{.REGISTRYNAME}}-k8s"
+
+tasks:
+  start-registry:
+    desc: Start local registry mirrors for development environment
+    cmds:
+      - for:
+          var: REGISTRIES
+        task: start-registry-template
+        vars:
+          NAME: "{{.ITEM.NAME}}"
+          URL: "{{.ITEM.URL}}"
+          CONTAINERNAME: "{{.ITEM.CONTAINERNAME}}"
+  destroy-registry:
+    desc: Destroy local registry mirrors for development environment
+    cmds:
+      - for:
+          var: REGISTRIES
+        task: destroy-registry-template
+        vars:
+          NAME: "{{.ITEM.NAME}}"
+          URL: "{{.ITEM.URL}}"
+          CONTAINERNAME: "{{.ITEM.CONTAINERNAME}}"
+  start-registry-template:
+    desc: Internal task to start registry mirror
+    internal: true
+    status:
+      - docker ps -q -f name={{.CONTAINERNAME}} | grep -q .
+    cmds:
+      - docker run --name {{.CONTAINERNAME}} -e REGISTRY_PROXY_REMOTEURL={{.URL}} -e OTEL_TRACES_EXPORTER=none -e REGISTRY_LOG_LEVEL=info --network {{.DOCKERNETWORK}} --restart unless-stopped --detach {{.REGISTRYIMAGE}} 
+  destroy-registry-template:
+    desc: Internal task to destroy registry mirror
+    internal: true
+    cmds:
+      - docker rm --force --volumes {{.CONTAINERNAME}}
+  start-cluster:
+    desc: Start Kind cluster for development environment
+    aliases: ['up']
+    status:
+      - kind get clusters | grep {{.CLUSTERNAME}}
+    cmds:
+      - |
+        cat <<EOT | kind create cluster --name {{.CLUSTERNAME}} --config=-
+        kind: Cluster
+        apiVersion: kind.x-k8s.io/v1alpha4
+        nodes:
+          - role: control-plane
+          - role: worker
+          - role: worker
+        networking:
+          kubeProxyMode: "nftables"
+        containerdConfigPatches:
+          - |-
+        {{- range  .REGISTRIES }}
+              [plugins."io.containerd.grpc.v1.cri".registry.mirrors."{{.BASE}}"]
+                endpoint = ["http://{{.CONTAINERNAME}}:5000"]
+        {{- end }}
+        EOT
+      - task: start-registry
+      - helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator --namespace flux-system --create-namespace
+      - kubectl apply -f instance.yaml
+  destroy-cluster:
+    desc: Destroy Kind cluster for development environment
+    cmds:
+      - kind delete cluster --name {{.CLUSTERNAME}}
+  recreate:
+    desc: Recreate development environment
+    cmds:
+      - task: destroy-cluster
+      - task: start-cluster
+  destroy:
+    desc: Destroy development environment
+    aliases: ['down']
+    cmds:
+      - task: destroy-cluster
+      - task: destroy-registry
