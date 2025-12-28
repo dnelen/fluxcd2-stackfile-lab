@@ -93,3 +93,36 @@ spec:
         chart: redis
         version: 24.1.0
         repository: bitnami
+---
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSetInputProvider
+metadata:
+  name: podinfo
+  namespace: flux-system
+  labels:
+    appset: "true"
+spec:
+  type: Static
+  defaultValues:
+    namespace:
+      name: "podinfo"
+      labels:
+        gateway-api: "private"
+    repositories:
+      - name: podinfo
+        url: oci://ghcr.io/stefanprodan/charts
+        type: oci
+        interval: 24h
+    releases:
+      - name: pod-a
+        chart: podinfo
+        version: "~6"
+        repository: podinfo
+      - name: pod-b
+        chart: podinfo
+        version: 6.9.3
+        repository: podinfo
+      - name: pod-c
+        chart: podinfo
+        version: 6.7.0
+        repository: podinfo
